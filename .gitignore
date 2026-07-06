@@ -3,3 +3,7 @@ README.md
 NewFeature.txt
 venv/
 render.yaml
+__pycache__/
+**/__pycache__/
+*.py[cod]
+**/*.py[cod]
