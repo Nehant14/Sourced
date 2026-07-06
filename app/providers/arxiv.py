@@ -18,7 +18,7 @@ import httpx
 from app.schemas import PaperReference
 
 ATOM_NS = {"atom": "http://www.w3.org/2005/Atom"}
-ARXIV_ENDPOINT = "http://export.arxiv.org/api/query"
+ARXIV_ENDPOINT = "https://export.arxiv.org/api/query"
 
 
 class ArxivError(Exception):
@@ -41,7 +41,7 @@ class ArxivProvider(PaperSearchProvider):
             "max_results": max_results,
         }
         try:
-            resp = httpx.get(ARXIV_ENDPOINT, params=params, timeout=self.timeout)
+            resp = httpx.get(ARXIV_ENDPOINT, params=params, timeout=self.timeout, follow_redirects=True)
             resp.raise_for_status()
         except httpx.HTTPError as e:
             raise ArxivError(str(e)) from e
