@@ -47,9 +47,9 @@ to be empty when sources agree."""
 
 def _sources_to_context(state: ResearchState) -> list[dict]:
     sources = []
-    for s in state.get("web_results") or []:
+    for s in state.get("filtered_web_results") or state.get("web_results") or []:
         sources.append({"source_id": s.source_id, "title": s.title, "snippet": s.snippet})
-    for p in state.get("paper_results") or []:
+    for p in state.get("filtered_paper_results") or state.get("paper_results") or []:
         sources.append({"source_id": p.source_id, "title": p.title, "abstract": p.abstract})
     return sources
 

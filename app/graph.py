@@ -20,6 +20,8 @@ from langgraph.graph import END, StateGraph
 
 from app.nodes.paper_retriever import paper_retriever_node
 from app.nodes.planner import planner_node, route_after_planner
+from app.nodes.query_reformulator import query_reformulator_node
+from app.nodes.relevance_filter import relevance_filter_node, route_after_relevance_filter
 from app.nodes.reconciler import reconciler_node
 from app.nodes.synthesizer import synthesizer_node
 from app.nodes.validator import route_after_validator, validator_node
@@ -40,6 +42,8 @@ def build_graph(
     graph.add_node("planner", planner_node(llm))
     graph.add_node("web_retriever", web_retriever_node(web_provider))
     graph.add_node("paper_retriever", paper_retriever_node(paper_provider))
+    graph.add_node("relevance_filter", relevance_filter_node(llm))
+    graph.add_node("query_reformulator", query_reformulator_node(llm))
     graph.add_node("reconciler", reconciler_node(llm))
     graph.add_node("synthesizer", synthesizer_node(llm))
     graph.add_node("validator", validator_node(llm))
@@ -58,10 +62,29 @@ def build_graph(
         },
     )
 
-    # Fan-in: both retrievers feed the reconciler. LangGraph waits for all
-    # active branches of the current superstep before running reconciler.
-    graph.add_edge("web_retriever", "reconciler")
-    graph.add_edge("paper_retriever", "reconciler")
+    # Fan-in: both retrievers feed the relevance filter. LangGraph waits for all
+    # active branches of the current superstep before running relevance_filter.
+    graph.add_edge("web_retriever", "relevance_filter")
+    graph.add_edge("paper_retriever", "relevance_filter")
+
+    graph.add_conditional_edges(
+        "relevance_filter",
+        route_after_relevance_filter,
+        {
+            "query_reformulator": "query_reformulator",
+            "reconciler": "reconciler",
+        },
+    )
+
+    graph.add_conditional_edges(
+        "query_reformulator",
+        route_after_planner,
+        {
+            "web_retriever": "web_retriever",
+            "paper_retriever": "paper_retriever",
+            "reconciler": "reconciler",
+        },
+    )
 
     graph.add_edge("reconciler", "synthesizer")
     graph.add_edge("synthesizer", "validator")

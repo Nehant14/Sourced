@@ -36,6 +36,12 @@ class ResearchState(TypedDict, total=False):
     # --- retrieval output ---
     web_results: list[SourceReference]
     paper_results: list[PaperReference]
+    filtered_web_results: list[SourceReference]
+    filtered_paper_results: list[PaperReference]
+    web_results_with_relevance: list[dict]
+    paper_results_with_relevance: list[dict]
+    retrieval_query: str
+    retrieval_retry_count: int
 
     # --- degradation bookkeeping (section 8) ---
     web_error: Optional[str]

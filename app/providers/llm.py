@@ -230,6 +230,10 @@ class MockLLMProvider(LLMProvider):
             return self._mock_conflicts(context)
         if name == "ValidationResult":
             return self._mock_validation(context)
+        if name == "RelevanceAnalysis":
+            return self._mock_relevance(context)
+        if name == "QueryReformulationResult":
+            return self._mock_reformulation(context)
 
         # Generic fallback: try to construct with minimal/empty values.
         try:
@@ -257,8 +261,8 @@ class MockLLMProvider(LLMProvider):
             kw in question for kw in ["today", "this week", "current", "latest news", "right now"]
         )
 
-        needs_papers = wants_recent_research or is_compound
-        needs_web = wants_current_events or is_compound or not wants_recent_research
+        needs_papers = wants_recent_research or is_compound or not wants_current_events
+        needs_web = wants_current_events or is_compound or wants_recent_research
 
         # Enforcement: always require at least one retrieval path for
         # citation integrity (see app/nodes/planner.py docstring for the
@@ -368,6 +372,36 @@ class MockLLMProvider(LLMProvider):
             )
 
         return ValidationResult(passed=True)
+
+    def _mock_relevance(self, context: dict):
+        from app.schemas import RelevanceAnalysis, RelevanceVerdict
+
+        question = (context.get("question") or "").lower()
+        keywords = {w for w in question.split() if len(w) > 4}
+        relevances = []
+        for src in context.get("sources", []):
+            text = " ".join(
+                filter(None, [src.get("title", ""), src.get("snippet", ""), src.get("abstract", "")])
+            ).lower()
+            match = any(kw in text for kw in keywords) if keywords else bool(text.strip())
+            relevances.append(RelevanceVerdict(source_id=src.get("source_id", ""), relevant_to_question=match))
+
+        return RelevanceAnalysis(relevances=relevances)
+
+    def _mock_reformulation(self, context: dict):
+        from app.schemas import QueryReformulationResult
+
+        question = (context.get("question") or "").strip()
+        if not question:
+            return QueryReformulationResult(reformulated_query="")
+
+        reformulated = question
+        if question.endswith("?"):
+            reformulated = question[:-1]
+        reformulated = reformulated.replace("Compare ", "Best search query to compare ")
+        if len(reformulated) > 120:
+            reformulated = reformulated[:120]
+        return QueryReformulationResult(reformulated_query=reformulated)
 
 
 def build_llm_provider() -> LLMProvider:

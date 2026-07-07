@@ -18,6 +18,8 @@ PENALTY_ZERO_PAPER_RESULTS_WHEN_NEEDED = 0.20
 PENALTY_PER_RETRY = 0.10
 PENALTY_CONFLICT_DETECTION_UNAVAILABLE = 0.10
 PENALTY_PROVIDER_DEGRADED = 0.10
+PENALTY_LOW_SOURCE_RELEVANCE = 0.25
+PENALTY_NO_RELEVANT_SOURCES = 0.15
 
 MIN_CONFIDENCE = 0.05
 MAX_CONFIDENCE = 1.0
@@ -35,13 +37,52 @@ def compute_confidence(state: ResearchState) -> tuple[float, list[str]]:
         score -= penalty
         reasons.append(f"-{penalty:.2f}: {len(conflicts)} unresolved source conflict(s)")
 
-    if state.get("needs_web") and not state.get("web_results"):
+    raw_web_results = state.get("web_results") or []
+    raw_paper_results = state.get("paper_results") or []
+    filtered_web_results = state.get("filtered_web_results") if "filtered_web_results" in state else raw_web_results
+    filtered_paper_results = state.get("filtered_paper_results") if "filtered_paper_results" in state else raw_paper_results
+
+    if state.get("needs_web") and not raw_web_results:
         score -= PENALTY_ZERO_WEB_RESULTS_WHEN_NEEDED
         reasons.append(f"-{PENALTY_ZERO_WEB_RESULTS_WHEN_NEEDED:.2f}: web search returned no results")
 
-    if state.get("needs_papers") and not state.get("paper_results"):
+    if state.get("needs_papers") and not raw_paper_results:
         score -= PENALTY_ZERO_PAPER_RESULTS_WHEN_NEEDED
         reasons.append(f"-{PENALTY_ZERO_PAPER_RESULTS_WHEN_NEEDED:.2f}: paper search returned no results")
+
+    total_retrieved = len(raw_web_results) + len(raw_paper_results)
+    total_filtered = len(filtered_web_results) + len(filtered_paper_results)
+    discarded = total_retrieved - total_filtered
+    if total_retrieved and discarded:
+        penalty = PENALTY_LOW_SOURCE_RELEVANCE * discarded / total_retrieved
+        score -= penalty
+        reasons.append(
+            f"-{penalty:.2f}: {discarded}/{total_retrieved} retrieved sources were irrelevant to the question"
+        )
+
+    if state.get("needs_web") and raw_web_results and not filtered_web_results:
+        score -= PENALTY_ZERO_WEB_RESULTS_WHEN_NEEDED
+        reasons.append(
+            f"-{PENALTY_ZERO_WEB_RESULTS_WHEN_NEEDED:.2f}: web search returned no relevant results after filtering"
+        )
+
+    if state.get("needs_papers") and raw_paper_results and not filtered_paper_results:
+        score -= PENALTY_ZERO_PAPER_RESULTS_WHEN_NEEDED
+        reasons.append(
+            f"-{PENALTY_ZERO_PAPER_RESULTS_WHEN_NEEDED:.2f}: paper search returned no relevant results after filtering"
+        )
+
+    if total_retrieved and total_filtered == 0:
+        score -= PENALTY_NO_RELEVANT_SOURCES
+        reasons.append(
+            f"-{PENALTY_NO_RELEVANT_SOURCES:.2f}: retrieved sources were not relevant to the question"
+        )
+
+    if (state.get("needs_web") or state.get("needs_papers")) and total_filtered == 0:
+        score -= PENALTY_NO_RELEVANT_SOURCES
+        reasons.append(
+            f"-{PENALTY_NO_RELEVANT_SOURCES:.2f}: no relevant sources were available to answer the question"
+        )
 
     retry_count = state.get("retry_count") or 0
     if retry_count:

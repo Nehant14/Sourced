@@ -14,7 +14,7 @@ from app.tracing import log_step
 
 def web_retriever_node(provider: WebSearchProvider):
     def _run(state: ResearchState) -> dict:
-        question = state["question"]
+        question = state.get("retrieval_query") or state["question"]
         try:
             results = provider.search(question, max_results=5)
             if not results:

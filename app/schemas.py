@@ -58,6 +58,24 @@ class PlannerDecision(BaseModel):
     )
 
 
+class RelevanceVerdict(BaseModel):
+    source_id: str = Field(description="ID of the source being judged.")
+    relevant_to_question: bool = Field(description="Whether the source is relevant.")
+
+
+class RelevanceAnalysis(BaseModel):
+    relevances: list[RelevanceVerdict] = Field(
+        default_factory=list,
+        description="Per-source relevance judgments for retrieved sources.",
+    )
+
+
+class QueryReformulationResult(BaseModel):
+    reformulated_query: str = Field(
+        description="A rewritten search query intended to return more relevant sources."
+    )
+
+
 # ---------------------------------------------------------------------------
 # Reconciler
 # ---------------------------------------------------------------------------
