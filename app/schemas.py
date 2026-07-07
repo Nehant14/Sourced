@@ -118,6 +118,12 @@ class ResearchAnswer(BaseModel):
     sources_used: dict[str, int] = Field(
         default_factory=dict, description="e.g. {'web': 3, 'papers': 2}"
     )
+    websites: list[SourceReference] = Field(
+        default_factory=list, description="Web Sources"
+    )
+    research_papers: list[PaperReference] = Field(
+        default_factory=list, description="Research Papers"
+    )
     degraded: bool = Field(
         default=False, description="True if one or more providers failed and we continued anyway"
     )

@@ -122,6 +122,8 @@ def validator_node(llm: LLMProvider):
                     "web": len(state.get("web_results") or []),
                     "papers": len(state.get("paper_results") or []),
                 },
+                websites=state.get("web_results") or [],
+                research_papers=state.get("paper_results") or [],
                 degraded=bool(state.get("degraded")),
                 degradation_notes=state.get("degradation_notes") or [],
             )
