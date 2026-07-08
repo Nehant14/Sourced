@@ -18,6 +18,7 @@ PENALTY_ZERO_PAPER_RESULTS_WHEN_NEEDED = 0.20
 PENALTY_PER_RETRY = 0.10
 PENALTY_CONFLICT_DETECTION_UNAVAILABLE = 0.10
 PENALTY_PROVIDER_DEGRADED = 0.10
+PENALTY_MAX_RELEVANCE_DISCARD = 0.30  # scaled by fraction of sources discarded
 
 MIN_CONFIDENCE = 0.05
 MAX_CONFIDENCE = 1.0
@@ -38,10 +39,41 @@ def compute_confidence(state: ResearchState) -> tuple[float, list[str]]:
     if state.get("needs_web") and not state.get("web_results"):
         score -= PENALTY_ZERO_WEB_RESULTS_WHEN_NEEDED
         reasons.append(f"-{PENALTY_ZERO_WEB_RESULTS_WHEN_NEEDED:.2f}: web search returned no results")
+    elif (
+        state.get("needs_web")
+        and state.get("web_results")
+        and state.get("web_results_filtered") is not None
+        and not state.get("web_results_filtered")
+    ):
+        score -= PENALTY_ZERO_WEB_RESULTS_WHEN_NEEDED
+        reasons.append(
+            f"-{PENALTY_ZERO_WEB_RESULTS_WHEN_NEEDED:.2f}: web sources were retrieved but none were relevant"
+        )
 
     if state.get("needs_papers") and not state.get("paper_results"):
         score -= PENALTY_ZERO_PAPER_RESULTS_WHEN_NEEDED
         reasons.append(f"-{PENALTY_ZERO_PAPER_RESULTS_WHEN_NEEDED:.2f}: paper search returned no results")
+    elif (
+        state.get("needs_papers")
+        and state.get("paper_results")
+        and state.get("paper_results_filtered") is not None
+        and not state.get("paper_results_filtered")
+    ):
+        score -= PENALTY_ZERO_PAPER_RESULTS_WHEN_NEEDED
+        reasons.append(
+            f"-{PENALTY_ZERO_PAPER_RESULTS_WHEN_NEEDED:.2f}: papers were retrieved but none were relevant"
+        )
+
+    discarded = state.get("relevance_discarded_count") or 0
+    total = state.get("relevance_total_count") or 0
+    if total and discarded:
+        discard_fraction = discarded / total
+        penalty = PENALTY_MAX_RELEVANCE_DISCARD * discard_fraction
+        score -= penalty
+        reasons.append(
+            f"-{penalty:.2f}: {discarded}/{total} retrieved source(s) filtered as irrelevant "
+            f"({discard_fraction:.0%})"
+        )
 
     retry_count = state.get("retry_count") or 0
     if retry_count:

@@ -25,10 +25,17 @@ sources as evidence. Rules:
 
 
 def _format_sources(state: ResearchState) -> str:
+    web = state.get("web_results_filtered")
+    if web is None:
+        web = state.get("web_results") or []
+    papers = state.get("paper_results_filtered")
+    if papers is None:
+        papers = state.get("paper_results") or []
+
     lines = []
-    for s in state.get("web_results") or []:
+    for s in web:
         lines.append(f"- [WEB:{s.source_id}] {s.title} ({s.url})\n  {s.snippet}")
-    for p in state.get("paper_results") or []:
+    for p in papers:
         lines.append(f"- [PAPER:{p.source_id}] {p.title} ({p.url})\n  {p.abstract}")
     return "\n".join(lines) if lines else "(no sources retrieved)"
 

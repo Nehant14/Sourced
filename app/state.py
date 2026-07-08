@@ -37,6 +37,18 @@ class ResearchState(TypedDict, total=False):
     web_results: list[SourceReference]
     paper_results: list[PaperReference]
 
+    # --- relevance filter output ---
+    web_results_filtered: list[SourceReference]
+    paper_results_filtered: list[PaperReference]
+    relevance_discarded_count: int
+    relevance_total_count: int
+
+    # --- retrieval retry (query reformulation), separate budget from
+    # the synthesizer/validator retry_count below ---
+    retrieval_retry_count: int
+    web_query_override: Optional[str]
+    paper_query_override: Optional[str]
+
     # --- degradation bookkeeping (section 8) ---
     web_error: Optional[str]
     paper_error: Optional[str]

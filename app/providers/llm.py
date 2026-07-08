@@ -230,6 +230,10 @@ class MockLLMProvider(LLMProvider):
             return self._mock_conflicts(context)
         if name == "ValidationResult":
             return self._mock_validation(context)
+        if name == "RelevanceAnalysis":
+            return self._mock_relevance(context)
+        if name == "QueryReformulation":
+            return self._mock_reformulation(context)
 
         # Generic fallback: try to construct with minimal/empty values.
         try:
@@ -368,6 +372,39 @@ class MockLLMProvider(LLMProvider):
             )
 
         return ValidationResult(passed=True)
+    
+
+    def _mock_relevance(self, context: dict):
+        from app.schemas import RelevanceAnalysis, RelevanceVerdict
+
+        question = (context.get("question") or "").lower()
+        question_words = {w.strip("?.,") for w in question.split() if len(w.strip("?.,")) > 4}
+        sources = context.get("sources", [])
+
+        verdicts = []
+        for s in sources:
+            text = (s.get("text") or "").lower()
+            overlap = any(w in text for w in question_words) if question_words else True
+            verdicts.append(
+                RelevanceVerdict(
+                    source_id=s.get("source_id", ""),
+                    relevant=overlap,
+                    reason="[mock] keyword overlap with question"
+                    if overlap
+                    else "[mock] no keyword overlap with question",
+                )
+            )
+        return RelevanceAnalysis(verdicts=verdicts)
+
+    def _mock_reformulation(self, context: dict):
+        from app.schemas import QueryReformulation
+
+        question = context.get("question") or ""
+        return QueryReformulation(
+            reformulated_query=f"{question} (broader terms)",
+            reasoning="[mock] deterministic placeholder reformulation for offline mode",
+        )
+
 
 
 def build_llm_provider() -> LLMProvider:
