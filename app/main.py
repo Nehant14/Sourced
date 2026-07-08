@@ -4,9 +4,14 @@ FastAPI app (spec section 10). Single endpoint: POST /research.
 Run locally:
     MOCK_MODE=true uvicorn app.main:app --reload
 
-Run against real providers:
+Run against real providers (Anthropic):
     LLM_PROVIDER=anthropic WEB_SEARCH_PROVIDER=tavily PAPER_SEARCH_PROVIDER=arxiv \\
     ANTHROPIC_API_KEY=... TAVILY_API_KEY=... \\
+    uvicorn app.main:app --reload
+
+Run with Groq (development/testing):
+    LLM_PROVIDER=groq WEB_SEARCH_PROVIDER=tavily PAPER_SEARCH_PROVIDER=arxiv \\
+    GROQ_API_KEY=... TAVILY_API_KEY=... \\
     uvicorn app.main:app --reload
 """
 from __future__ import annotations
