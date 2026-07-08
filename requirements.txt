@@ -7,6 +7,7 @@ pydantic>=2.7.0
 anthropic>=0.34.0
 google-generativeai>=0.8.0
 pytest>=8.0.0
+groq>=0.4.0  # For development and testing
 
 # Optional, only needed if you wire up LangSmith tracing (spec section 9):
 # langsmith>=0.1.0

@@ -111,6 +111,13 @@ def validator_node(llm: LLMProvider):
         }
 
         if result.passed or new_retry_count >= MAX_RETRIES:
+            web_used = state.get("web_results_filtered")
+            if web_used is None:
+                web_used = state.get("web_results") or []
+            papers_used = state.get("paper_results_filtered")
+            if papers_used is None:
+                papers_used = state.get("paper_results") or []
+
             update["final_answer"] = ResearchAnswer(
                 question=state["question"],
                 answer=answer,
@@ -119,11 +126,12 @@ def validator_node(llm: LLMProvider):
                 confidence=confidence,
                 retries_used=new_retry_count,
                 sources_used={
-                    "web": len(state.get("web_results") or []),
-                    "papers": len(state.get("paper_results") or []),
+                    "web": len(web_used),
+                    "papers": len(papers_used),
                 },
                 websites=state.get("web_results") or [],
                 research_papers=state.get("paper_results") or [],
+                sources_filtered_out=state.get("relevance_discarded_count") or 0,
                 degraded=bool(state.get("degraded")),
                 degradation_notes=state.get("degradation_notes") or [],
             )

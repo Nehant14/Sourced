@@ -1,7 +1,7 @@
 """
 LLM provider abstraction.
 
-Two concrete providers are implemented:
+Three concrete providers are implemented:
   - AnthropicProvider: real calls to the Anthropic Messages API. Structured
     output is implemented via forced tool-use (a single tool whose input
     schema is the pydantic model's JSON schema, tool_choice forced to it) -
@@ -9,13 +9,15 @@ Two concrete providers are implemented:
     for; we never regex-parse free text for anything machine-readable.
   - GeminiProvider: uses Google's Gemini API via google-generativeai for both
     plain text and JSON-structured responses.
+  - GroqProvider: uses Groq's inference API for development and testing. Uses
+    JSON schema responses for structured output with retry logic.
   - MockLLMProvider: fully offline, deterministic. It does NOT call any
     network. It inspects the requested schema + an optional `context` dict
     (raw data the node already has, e.g. the retrieved sources) and fabricates
     a plausible structured response. This is what lets the whole graph, the
     test suite and the eval harness run with zero API keys.
 
-Swapping in OpenAI/Gemini only requires implementing this same interface;
+Swapping in OpenAI/Groq/other providers only requires implementing this same interface;
 the rest of the codebase never touches provider-specific types.
 """
 from __future__ import annotations
@@ -180,6 +182,99 @@ class GeminiProvider(LLMProvider):
 
 
 # ---------------------------------------------------------------------------
+# Groq
+# ---------------------------------------------------------------------------
+
+class GroqProvider(LLMProvider):
+    def __init__(self, api_key: str | None = None, model: str | None = None):
+        try:
+            from groq import Groq
+        except ImportError as e:
+            raise ImportError(
+                "The 'groq' package is required for GroqProvider. "
+                "pip install groq"
+            ) from e
+        self._groq_cls = Groq
+        self.api_key = api_key or os.environ.get("GROQ_API_KEY")
+        if not self.api_key:
+            raise ValueError("GROQ_API_KEY not set and no api_key passed in")
+        self.model = model or os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile")
+        self.client = self._groq_cls(api_key=self.api_key)
+
+    def generate_text(self, prompt: str, system: str | None = None) -> str:
+        resp = self.client.chat.completions.create(
+            model=self.model,
+            max_tokens=1500,
+            messages=[
+                {"role": "system", "content": system or ""},
+                {"role": "user", "content": prompt},
+            ],
+        )
+        content = resp.choices[0].message.content
+        if not content:
+            raise LLMError("Groq returned empty content")
+        return content.strip()
+
+    def generate_structured(
+        self,
+        prompt: str,
+        schema: Type[T],
+        system: str | None = None,
+        context: dict | None = None,
+    ) -> T:
+        schema_json = json.dumps(schema.model_json_schema())
+        system_prompt = (system or "") + "\n\nYou MUST respond with ONLY valid JSON, no markdown, no code blocks, no explanations."
+        payload_prompt = (
+            f"{prompt}\n\nYou must respond with valid JSON only (no markdown, no backticks, no code blocks) "
+            f"that matches this schema:\n{schema_json}"
+        )
+        last_error: Exception | None = None
+        for attempt in range(2):  # one retry with a stricter instruction, per spec section 8
+            try:
+                strictness = (
+                    ""
+                    if attempt == 0
+                    else "\n\nIMPORTANT: your previous response was not valid JSON. "
+                    "You MUST respond with ONLY valid JSON that strictly matches the schema. "
+                    "No markdown, no code blocks, no explanations. Just the JSON."
+                )
+                resp = self.client.chat.completions.create(
+                    model=self.model,
+                    max_tokens=2048,  # increased for structured output with schema
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": payload_prompt + strictness},
+                    ],
+                )
+                content = resp.choices[0].message.content
+                if not content:
+                    raise LLMError("Groq returned empty content")
+                
+                # Strip potential markdown code blocks if present
+                content = content.strip()
+                if content.startswith("```json"):
+                    content = content[7:]  # Remove ```json
+                if content.startswith("```"):
+                    content = content[3:]  # Remove ```
+                if content.endswith("```"):
+                    content = content[:-3]  # Remove trailing ```
+                content = content.strip()
+                
+                if not content:
+                    raise LLMError("Groq content was empty after cleanup")
+                
+                data = json.loads(content)
+                return schema(**data)
+            except json.JSONDecodeError as e:
+                last_error = e
+                continue
+            except Exception as e:  # noqa: BLE001
+                last_error = e
+                continue
+        raise LLMError(f"Groq structured generation failed after retries: {last_error}")
+
+
+# ---------------------------------------------------------------------------
 # Mock
 # ---------------------------------------------------------------------------
 
@@ -230,6 +325,10 @@ class MockLLMProvider(LLMProvider):
             return self._mock_conflicts(context)
         if name == "ValidationResult":
             return self._mock_validation(context)
+        if name == "RelevanceAnalysis":
+            return self._mock_relevance(context)
+        if name == "QueryReformulation":
+            return self._mock_reformulation(context)
 
         # Generic fallback: try to construct with minimal/empty values.
         try:
@@ -368,6 +467,39 @@ class MockLLMProvider(LLMProvider):
             )
 
         return ValidationResult(passed=True)
+    
+
+    def _mock_relevance(self, context: dict):
+        from app.schemas import RelevanceAnalysis, RelevanceVerdict
+
+        question = (context.get("question") or "").lower()
+        question_words = {w.strip("?.,") for w in question.split() if len(w.strip("?.,")) > 4}
+        sources = context.get("sources", [])
+
+        verdicts = []
+        for s in sources:
+            text = (s.get("text") or "").lower()
+            overlap = any(w in text for w in question_words) if question_words else True
+            verdicts.append(
+                RelevanceVerdict(
+                    source_id=s.get("source_id", ""),
+                    relevant=overlap,
+                    reason="[mock] keyword overlap with question"
+                    if overlap
+                    else "[mock] no keyword overlap with question",
+                )
+            )
+        return RelevanceAnalysis(verdicts=verdicts)
+
+    def _mock_reformulation(self, context: dict):
+        from app.schemas import QueryReformulation
+
+        question = context.get("question") or ""
+        return QueryReformulation(
+            reformulated_query=f"{question} (broader terms)",
+            reasoning="[mock] deterministic placeholder reformulation for offline mode",
+        )
+
 
 
 def build_llm_provider() -> LLMProvider:
@@ -380,6 +512,8 @@ def build_llm_provider() -> LLMProvider:
         return AnthropicProvider()
     if provider_name == "gemini":
         return GeminiProvider()
+    if provider_name == "groq":
+        return GroqProvider()
     if provider_name == "mock":
         return MockLLMProvider()
     raise ValueError(f"Unknown LLM_PROVIDER: {provider_name}")

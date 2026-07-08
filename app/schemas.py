@@ -27,6 +27,10 @@ class SourceReference(BaseModel):
     url: str
     snippet: str
     retrieved_at: datetime
+    relevant: Optional[bool] = Field(
+        default=None,
+        description="Set by relevance_filter_node; None if the filter hasn't run",
+    )
 
 
 class PaperReference(BaseModel):
@@ -38,6 +42,32 @@ class PaperReference(BaseModel):
     authors: list[str]
     published: Optional[str] = None
     abstract: str
+    relevant: Optional[bool] = Field(
+        default=None,
+        description="Set by relevance_filter_node; None if the filter hasn't run",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Relevance filter
+# ---------------------------------------------------------------------------
+
+class RelevanceVerdict(BaseModel):
+    source_id: str
+    relevant: bool
+    reason: str = Field(default="", description="Short phrase explaining the verdict")
+
+
+class RelevanceAnalysis(BaseModel):
+    """Structured output of the relevance-filter LLM call."""
+    verdicts: list[RelevanceVerdict] = Field(default_factory=list)
+
+
+class QueryReformulation(BaseModel):
+    """Structured output asking the LLM to rewrite a query that returned
+    mostly irrelevant results."""
+    reformulated_query: str
+    reasoning: str = Field(default="")
 
 
 # ---------------------------------------------------------------------------
@@ -119,10 +149,13 @@ class ResearchAnswer(BaseModel):
         default_factory=dict, description="e.g. {'web': 3, 'papers': 2}"
     )
     websites: list[SourceReference] = Field(
-        default_factory=list, description="Web Sources"
+        default_factory=list, description="Full web sources retrieved (not just cited ones)"
     )
     research_papers: list[PaperReference] = Field(
-        default_factory=list, description="Research Papers"
+        default_factory=list, description="Full paper sources retrieved (not just cited ones)"
+    )
+    sources_filtered_out: int = Field(
+        default=0, description="Count of retrieved sources dropped by the relevance filter as off-topic"
     )
     degraded: bool = Field(
         default=False, description="True if one or more providers failed and we continued anyway"
