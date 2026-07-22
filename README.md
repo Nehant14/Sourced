@@ -102,18 +102,6 @@ pytest -v
 31 passed, 3 failed
 ```
 
-Current failures:
-
-- `tests/test_llm_providers.py::test_dotenv_values_are_loaded_for_llm_provider` —
-  provider selection falls back to `MockLLMProvider` instead of picking up
-  `GEMINI_API_KEY`/`LLM_PROVIDER=gemini` from a `.env` file.
-- `tests/test_robustness.py::test_web_provider_down_degrades_to_papers_only` —
-  expects `final_answer.degraded is True` when the web provider fails, but the
-  answer comes back with `degraded=False`.
-- `tests/test_robustness.py::test_both_providers_down_still_produces_a_state_not_a_crash` —
-  expects confidence `< 0.6` when both providers fail (zero sources), but the
-  confidence score isn't being penalized enough (currently ~0.7).
-
 ## 6. Definition of done (from the build spec)
 
 | Question | Status |
