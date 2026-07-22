@@ -14,14 +14,15 @@ finalizing.
 
 Ask it a question. A planner decides whether it needs web search, paper
 search, or both, and whether the question should be split into
-sub-questions. The relevant retrievers run **in parallel**. A reconciler
-extracts factual claims from every retrieved source and checks whether any
-of them genuinely disagree — calibrated to stay quiet when sources agree,
-not to manufacture drama. A synthesizer writes a cited answer that surfaces
-any real conflict explicitly. A validator checks citation coverage and
-conflict coverage, routing back to the synthesizer with specific feedback
-when needed. Every answer ships with a derived confidence score and a full
-execution trace.
+sub-questions. The relevant retrievers run **in parallel**. A relevance
+filter then screens every retrieved source and, if too much gets discarded
+and retry budget remains, sends the query back to a reformulator for another
+retrieval pass. Once relevance is settled, a reconciler extracts factual
+claims from every retrieved source and checks whether any of them genuinely
+disagree, calibrated to stay quiet when sources agree. A synthesizer writes a cited answer that surfaces any real conflict
+explicitly. A validator checks citation coverage and conflict coverage,
+routing back to the synthesizer with specific feedback when needed. Every
+answer ships with a derived confidence score and a full execution trace.
 
 ## 2. Architecture
 
@@ -29,21 +30,39 @@ execution trace.
 planner
   │  (conditional fan-out on needs_web / needs_papers)
   ├──> web_retriever ───┐
-  └──> paper_retriever ─┼──> reconciler ──> synthesizer ──> validator
-                         │                                     │
-                         │           ┌─────── retry (≤2) ──────┤
-                         │           ▼                         │
-                         └────── synthesizer <──────────────────
-                                                                 │
-                                                          pass / retries exhausted
-                                                                 ▼
-                                                                END
+  └──> paper_retriever ─┴──> relevance_filter
+                                  │
+                                  │  (conditional: confidence too low
+                                  │   AND retry budget left)
+                                  ├──> query_reformulator ──┐
+                                  │                          │ (same fan-out
+                                  │                          │  rule as planner)
+                                  │        ┌─────────────────┘
+                                  │        ├──> web_retriever
+                                  │        └──> paper_retriever
+                                  │
+                                  ▼  (confidence OK, or retry budget spent)
+                              reconciler ──> synthesizer ──> validator
+                                                                  │
+                                                  ┌─── retry (≤2) ┤
+                                                  ▼               │
+                                              synthesizer <───────┘
+                                                                  │
+                                                    pass / retries exhausted
+                                                                  ▼
+                                                                 END
 ```
 
-- `web_retriever` and `paper_retriever` only run when the planner flags them
-  as needed (a conditional edge, not an `if` inside an always-run node), and
-  run **in parallel** when both are needed — LangGraph fans out independent
-  branches within a superstep and joins them before `reconciler` runs.
+- `web_retriever` and `paper_retriever` only run when the planner (or, on a
+  retry, the reformulator) flags them as needed (a conditional edge, not an
+  `if` inside an always-run node), and run **in parallel** when both are
+  needed. LangGraph fans out independent branches within a superstep and
+  joins them before `relevance_filter` runs.
+- `relevance_filter` routes to `query_reformulator` (which rewrites the query
+  and re-triggers the retrievers) or straight to `reconciler`. This retry
+  uses its own budget, `retrieval_retry_count` (capped at **1**), which is
+  separate from the synthesizer/validator `retry_count` below — they retry
+  different things at different costs.
 - `validator` routes back to `synthesizer` (carrying specific feedback) or to
   `END`, capped at 2 retries.
 
@@ -80,8 +99,20 @@ threads a flagged conflict through to the final answer.
 
 ```
 pytest -v
-30 passed, 4 failed
+31 passed, 3 failed
 ```
+
+Current failures:
+
+- `tests/test_llm_providers.py::test_dotenv_values_are_loaded_for_llm_provider` —
+  provider selection falls back to `MockLLMProvider` instead of picking up
+  `GEMINI_API_KEY`/`LLM_PROVIDER=gemini` from a `.env` file.
+- `tests/test_robustness.py::test_web_provider_down_degrades_to_papers_only` —
+  expects `final_answer.degraded is True` when the web provider fails, but the
+  answer comes back with `degraded=False`.
+- `tests/test_robustness.py::test_both_providers_down_still_produces_a_state_not_a_crash` —
+  expects confidence `< 0.6` when both providers fail (zero sources), but the
+  confidence score isn't being penalized enough (currently ~0.7).
 
 ## 6. Definition of done (from the build spec)
 
@@ -91,7 +122,7 @@ pytest -v
 | "Show me a case where the sources disagreed and the system caught it" | ✅ Demonstrated in mock mode (section 4) and `tests/test_graph_e2e.py::test_e2e_deliberate_conflict_question_surfaces_conflict`. |
 | "What happens if arXiv is down right now?" | ✅ Degrades to web-only (or a clearly-marked zero-source state if both fail) — the system never crashes. |
 
-## 8. Local setup
+## 7. Local setup
 
 ```bash
 git clone <this repo>
@@ -126,6 +157,15 @@ uvicorn app.main:app --reload
 ```bash
 export LLM_PROVIDER=anthropic WEB_SEARCH_PROVIDER=tavily PAPER_SEARCH_PROVIDER=arxiv
 export ANTHROPIC_API_KEY=sk-ant-...
+export TAVILY_API_KEY=tvly-...
+uvicorn app.main:app --reload
+```
+
+**Groq (development/testing):**
+
+```bash
+export LLM_PROVIDER=groq WEB_SEARCH_PROVIDER=tavily PAPER_SEARCH_PROVIDER=arxiv
+export GROQ_API_KEY=gsk_...
 export TAVILY_API_KEY=tvly-...
 uvicorn app.main:app --reload
 ```
@@ -168,13 +208,15 @@ app/
   graph.py             # StateGraph wiring (spec section 5)
   main.py              # FastAPI app, POST /research
   providers/
-    llm.py             # AnthropicProvider + GeminiProvider + MockLLMProvider
+    llm.py             # AnthropicProvider + GeminiProvider + GroqProvider + MockLLMProvider
     search.py          # TavilyProvider + MockWebSearchProvider
     arxiv.py            # ArxivProvider (stdlib XML parsing) + MockArxivProvider
   nodes/
     planner.py
     web_retriever.py
     paper_retriever.py
+    relevance_filter.py
+    query_reformulator.py
     reconciler.py
     synthesizer.py
     validator.py

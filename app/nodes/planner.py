@@ -1,5 +1,5 @@
 """
-planner_node (spec section 4.1).
+planner_node.
 
 Design decision on the "no-retrieval path" question the spec explicitly
 raises: we FORCE at least one retrieval path even when the LLM is confident

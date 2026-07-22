@@ -1,5 +1,5 @@
 """
-reconciler_node (spec section 4.3) - the core differentiator.
+reconciler_node - the core differentiator.
 
 Implementation note on the "clustering" step: the spec describes three
 LLM-driven steps (extract claims / cluster claims / determine agreement per

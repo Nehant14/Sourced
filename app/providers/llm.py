@@ -2,11 +2,7 @@
 LLM provider abstraction.
 
 Three concrete providers are implemented:
-  - AnthropicProvider: real calls to the Anthropic Messages API. Structured
-    output is implemented via forced tool-use (a single tool whose input
-    schema is the pydantic model's JSON schema, tool_choice forced to it) -
-    this is the "function-calling / structured output mode" the spec asks
-    for; we never regex-parse free text for anything machine-readable.
+  - AnthropicProvider: real calls to the Anthropic Messages API.
   - GeminiProvider: uses Google's Gemini API via google-generativeai for both
     plain text and JSON-structured responses.
   - GroqProvider: uses Groq's inference API for development and testing. Uses

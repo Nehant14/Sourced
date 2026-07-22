@@ -1,5 +1,5 @@
 """
-paper_retriever_node (spec section 4.2 / section 8). Mirrors web_retriever_node.
+paper_retriever_node . Mirrors web_retriever_node.
 """
 from __future__ import annotations
 
